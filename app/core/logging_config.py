@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from app.config import config
+from app.core.config import config
 
 LOG_PATH = Path(config["logging"]["arquivo"])
 LOG_LEVEL = config["logging"]["nivel"]
