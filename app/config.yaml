@@ -1,0 +1,17 @@
+storage:
+  diretorio_documentos: "./storage/documentos"
+  diretorio_backups: "./storage/backups"
+  diretorio_metadata: "./storage/metadata"
+
+upload:
+  tamanho_maximo_mb: 20
+
+hash:
+  algoritmo: "sha256"
+
+logging:
+  arquivo: "./storage/logs/sistema.log"
+  nivel: "INFO"
+
+backup:
+  formato: "zip"
