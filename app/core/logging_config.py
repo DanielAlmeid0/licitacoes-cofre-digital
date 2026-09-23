@@ -1,21 +1,17 @@
 import logging
-import logging.config
-import os
 from pathlib import Path
 
-import yaml
+from app.config import config
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-LOGGING_FILE = BASE_DIR / "logging.yaml"
-LOG_DIR = BASE_DIR / "storage" / "logs"
+LOG_PATH = Path(config["logging"]["arquivo"])
+LOG_LEVEL = config["logging"]["nivel"]
 
-with open(LOGGING_FILE, "r", encoding="utf-8") as file:
-    config = yaml.safe_load(file)
-
-os.makedirs(LOG_DIR, exist_ok=True)
-config["handlers"]["file"]["filename"] = str(LOG_DIR / "sistema.log")
-
-logging.config.dictConfig(config)
+logging.basicConfig(
+    filename=str(LOG_PATH),
+    level=getattr(logging, LOG_LEVEL),
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 logger = logging.getLogger("cofre_licitacoes")
 logger.info("INICIALIZACAO sistema=cofre_licitacoes status=ok")
