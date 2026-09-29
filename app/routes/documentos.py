@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.core.config import config
 from app.core.logging_config import logger
@@ -103,3 +104,28 @@ def consultar_documento(documento_id: int):
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     return documento
+
+@router.get("/{documento_id}/download")
+def download_documento(documento_id: int):
+    documento = buscar_por_id(documento_id)
+
+    if not documento:
+        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
+
+    if not os.path.exists(caminho_arquivo):
+        logger.error("ARQUIVO_FISICO_AUSENTE id=%s arquivo=%s", documento_id, documento.nome_armazenado)
+        raise HTTPException(
+            status_code=404,
+            detail="Arquivo físico não encontrado no armazenamento.",
+        )
+
+    logger.info("DOWNLOAD id=%s arquivo=%s", documento.id, documento.nome_original)
+
+    return FileResponse(
+        path=caminho_arquivo,
+        filename=documento.nome_original,
+        media_type=documento.tipo_mime,
+    )
