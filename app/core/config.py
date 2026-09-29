@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
+CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
 
 def carregar_config() -> dict:
     with open(CONFIG_PATH, "r", encoding="utf-8") as arquivo:
@@ -23,4 +23,3 @@ def garantir_diretorios(config: dict) -> None:
 
 config = carregar_config()
 garantir_diretorios(config)
-
