@@ -2,7 +2,7 @@ import hashlib
 import mimetypes
 import os
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
@@ -10,12 +10,21 @@ from fastapi.responses import FileResponse
 from app.core.config import config
 from app.core.logging_config import logger
 from app.models import Documento, Modalidade, SituacaoProcesso, TipoDocumento
-from app.services.json_repository import adicionar, buscar_por_id, proximo_id
+from app.services.json_repository import adicionar, buscar_por_id, ler_todos, proximo_id
 
 router = APIRouter(prefix="/documentos", tags=["Documentos"])
 
 DOCUMENTOS_DIR = config["storage"]["diretorio_documentos"]
 os.makedirs(DOCUMENTOS_DIR, exist_ok=True)
+
+
+@router.get("", response_model=List[Documento])
+def listar_documentos():
+    documentos = ler_todos()
+
+    logger.info("LISTAGEM total=%s", len(documentos))
+
+    return documentos
 
 
 @router.post("", response_model=Documento, status_code=status.HTTP_201_CREATED)
@@ -104,6 +113,7 @@ def consultar_documento(documento_id: int):
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     return documento
+
 
 @router.get("/{documento_id}/download")
 def download_documento(documento_id: int):
