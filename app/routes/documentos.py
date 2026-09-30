@@ -139,3 +139,40 @@ def download_documento(documento_id: int):
         filename=documento.nome_original,
         media_type=documento.tipo_mime,
     )
+
+@router.get("/{documento_id}/integridade")
+def verificar_integridade(documento_id: int):
+    documento = buscar_por_id(documento_id)
+
+    if not documento:
+        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
+
+    if not os.path.exists(caminho_arquivo):
+        logger.error(
+            "ARQUIVO_FISICO_AUSENTE id=%s arquivo=%s", documento_id, documento.nome_armazenado
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Arquivo físico não encontrado no armazenamento.",
+        )
+
+    with open(caminho_arquivo, "rb") as f:
+        hash_atual = hashlib.sha256(f.read()).hexdigest()
+
+    integro = hash_atual == documento.sha256
+
+    if integro:
+        logger.info("INTEGRIDADE_OK id=%s", documento_id)
+    else:
+        logger.warning("INTEGRIDADE_FALHOU id=%s", documento_id)
+
+    return {
+        "id": documento.id,
+        "nome": documento.nome_original,
+        "hash_original": documento.sha256,
+        "hash_atual": hash_atual,
+        "integro": integro,
+    }
