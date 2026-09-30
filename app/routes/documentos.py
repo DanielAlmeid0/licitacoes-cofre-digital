@@ -145,7 +145,7 @@ def verificar_integridade(documento_id: int):
     documento = buscar_por_id(documento_id)
 
     if not documento:
-        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
+        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id) 
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
