@@ -49,3 +49,19 @@ def buscar_por_id(documento_id: int) -> Optional[Documento]:
         if doc.id == documento_id:
             return doc
     return None
+
+def atualizar(documento: Documento) -> None:
+    documentos = ler_todos()
+    documentos = [documento if doc.id == documento.id else doc for doc in documentos]
+    salvar_todos(documentos)
+
+
+def remover(documento_id: int) -> bool:
+    documentos = ler_todos()
+    restantes = [doc for doc in documentos if doc.id != documento_id]
+
+    if len(restantes) == len(documentos):
+        return False
+
+    salvar_todos(restantes)
+    return True

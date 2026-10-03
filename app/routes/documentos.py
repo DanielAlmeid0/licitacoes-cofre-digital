@@ -6,16 +6,37 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.core.config import config
 from app.core.logging_config import logger
 from app.models import Documento, Modalidade, SituacaoProcesso, TipoDocumento
-from app.services.json_repository import adicionar, buscar_por_id, ler_todos, proximo_id
+from app.services.json_repository import (
+    adicionar,
+    atualizar,
+    buscar_por_id,
+    ler_todos,
+    proximo_id,
+    remover,
+)
 
 router = APIRouter(prefix="/documentos", tags=["Documentos"])
 
 DOCUMENTOS_DIR = config["storage"]["diretorio_documentos"]
 os.makedirs(DOCUMENTOS_DIR, exist_ok=True)
+
+
+class DocumentoUpdate(BaseModel):
+    categoria: Optional[str] = None
+    descricao: Optional[str] = None
+    tipo_documento: Optional[TipoDocumento] = None
+    modalidade: Optional[Modalidade] = None
+    orgao_responsavel: Optional[str] = None
+    valor_estimado: Optional[float] = None
+    valor_contratado: Optional[float] = None
+    data_abertura: Optional[datetime] = None
+    date_homologacao: Optional[datetime] = None
+    situacao: Optional[SituacaoProcesso] = None
 
 
 @router.get("", response_model=List[Documento])
@@ -126,7 +147,9 @@ def download_documento(documento_id: int):
     caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
 
     if not os.path.exists(caminho_arquivo):
-        logger.error("ARQUIVO_FISICO_AUSENTE id=%s arquivo=%s", documento_id, documento.nome_armazenado)
+        logger.error(
+            "ARQUIVO_FISICO_AUSENTE id=%s arquivo=%s", documento_id, documento.nome_armazenado
+        )
         raise HTTPException(
             status_code=404,
             detail="Arquivo físico não encontrado no armazenamento.",
@@ -140,12 +163,13 @@ def download_documento(documento_id: int):
         media_type=documento.tipo_mime,
     )
 
+
 @router.get("/{documento_id}/integridade")
 def verificar_integridade(documento_id: int):
     documento = buscar_por_id(documento_id)
 
     if not documento:
-        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id) 
+        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
@@ -176,3 +200,53 @@ def verificar_integridade(documento_id: int):
         "hash_atual": hash_atual,
         "integro": integro,
     }
+
+
+@router.put("/{documento_id}", response_model=Documento)
+def atualizar_documento(documento_id: int, dados: DocumentoUpdate):
+    documento = buscar_por_id(documento_id)
+
+    if not documento:
+        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    atualizacoes = dados.model_dump(exclude_unset=True)
+
+    if "descricao" in atualizacoes:
+        atualizacoes["desccricao"] = atualizacoes.pop("descricao")
+
+    documento_atualizado = documento.model_copy(update=atualizacoes)
+
+    atualizar(documento_atualizado)
+
+    logger.info(
+        "ATUALIZACAO id=%s campos=%s",
+        documento_id,
+        ",".join(atualizacoes.keys()) if atualizacoes else "nenhum",
+    )
+
+    return documento_atualizado
+
+
+@router.delete("/{documento_id}", status_code=status.HTTP_204_NO_CONTENT)
+def excluir_documento(documento_id: int):
+    documento = buscar_por_id(documento_id)
+
+    if not documento:
+        logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
+
+    if os.path.exists(caminho_arquivo):
+        os.remove(caminho_arquivo)
+    else:
+        logger.warning(
+            "ARQUIVO_FISICO_AUSENTE id=%s arquivo=%s", documento_id, documento.nome_armazenado
+        )
+
+    remover(documento_id)
+
+    logger.info("EXCLUSAO id=%s arquivo=%s", documento_id, documento.nome_original)
+
+    return None
