@@ -80,7 +80,47 @@ def listar_documentos(
  
     return documentos
 
+# F8 Estatísticas
 
+@router.get("/estatisticas")
+def estatisticas_documentos():
+    documentos = ler_todos()
+ 
+    total_documentos = len(documentos)
+    espaco_utilizado_bytes = sum(d.tamanho for d in documentos)
+ 
+    por_extensao: dict[str, int] = {}
+    por_categoria: dict[str, int] = {}
+    por_modalidade: dict[str, int] = {}
+    por_situacao: dict[str, int] = {}
+    valor_total_contratado = 0.0
+ 
+    for d in documentos:
+        por_extensao[d.extensao] = por_extensao.get(d.extensao, 0) + 1
+        por_categoria[d.categoria] = por_categoria.get(d.categoria, 0) + 1
+ 
+        if d.modalidade is not None:
+            chave_modalidade = d.modalidade.value
+            por_modalidade[chave_modalidade] = por_modalidade.get(chave_modalidade, 0) + 1
+ 
+        if d.situacao is not None:
+            chave_situacao = d.situacao.value
+            por_situacao[chave_situacao] = por_situacao.get(chave_situacao, 0) + 1
+ 
+        if d.valor_contratado is not None:
+            valor_total_contratado += d.valor_contratado
+ 
+    logger.info("ESTATISTICAS total=%s", total_documentos)
+ 
+    return {
+        "total_documentos": total_documentos,
+        "espaco_utilizado_bytes": espaco_utilizado_bytes,
+        "por_extensao": por_extensao,
+        "por_categoria": por_categoria,
+        "por_modalidade": por_modalidade,
+        "por_situacao": por_situacao,
+        "valor_total_contratado": round(valor_total_contratado, 2),
+    }
 
 
 @router.post("", response_model=Documento, status_code=status.HTTP_201_CREATED)
