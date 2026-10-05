@@ -39,13 +39,48 @@ class DocumentoUpdate(BaseModel):
     situacao: Optional[SituacaoProcesso] = None
 
 
+# F7 listagem com filtros
+
 @router.get("", response_model=List[Documento])
-def listar_documentos():
+def listar_documentos(
+    categoria: Optional[str] = None,
+    extensao: Optional[str] = None,
+    numero_processo: Optional[str] = None,
+    tipo_documento: Optional[TipoDocumento] = None,
+    modalidade: Optional[Modalidade] = None,
+    orgao_responsavel: Optional[str] = None,
+    situacao: Optional[SituacaoProcesso] = None,
+):
+
     documentos = ler_todos()
 
-    logger.info("LISTAGEM total=%s", len(documentos))
+    if categoria is not None:
+        documentos = [d for d in documentos if d.categoria == categoria]
 
+    if extensao is not None:
+        extensao_normalizada = extensao if extensao.startswith(".") else f".{extensao}"
+        documentos = [d for d in documentos if d.extensao == extensao_normalizada]
+
+    if numero_processo is not None:
+        documentos = [d for d in documentos if d.numero_processo == numero_processo]
+ 
+    if tipo_documento is not None:
+        documentos = [d for d in documentos if d.tipo_documento == tipo_documento]
+ 
+    if modalidade is not None:
+        documentos = [d for d in documentos if d.modalidade == modalidade]
+ 
+    if orgao_responsavel is not None:
+        documentos = [d for d in documentos if d.orgao_responsavel == orgao_responsavel]
+ 
+    if situacao is not None:
+        documentos = [d for d in documentos if d.situacao == situacao]
+ 
+    logger.info("LISTAGEM total=%s", len(documentos))
+ 
     return documentos
+
+
 
 
 @router.post("", response_model=Documento, status_code=status.HTTP_201_CREATED)
@@ -91,7 +126,7 @@ async def upload_documento(
         tipo_mime=tipo_mime,
         tamanho=tamanho,
         categoria=categoria,
-        desccricao=descricao,
+        descricao=descricao,
         data_upload=datetime.now(),
         sha256=sha256,
         numero_processo=numero_processo,
@@ -101,7 +136,7 @@ async def upload_documento(
         valor_estimado=valor_estimado,
         valor_contratado=valor_contratado,
         data_abertura=data_abertura,
-        date_homologacao=date_homologacao,
+        data_homologacao=date_homologacao,
         situacao=situacao,
     )
 
@@ -213,7 +248,7 @@ def atualizar_documento(documento_id: int, dados: DocumentoUpdate):
     atualizacoes = dados.model_dump(exclude_unset=True)
 
     if "descricao" in atualizacoes:
-        atualizacoes["desccricao"] = atualizacoes.pop("descricao")
+        atualizacoes["descricao"] = atualizacoes.pop("descricao")
 
     documento_atualizado = documento.model_copy(update=atualizacoes)
 
