@@ -35,11 +35,10 @@ class DocumentoUpdate(BaseModel):
     valor_estimado: Optional[float] = None
     valor_contratado: Optional[float] = None
     data_abertura: Optional[datetime] = None
-    date_homologacao: Optional[datetime] = None
+    data_homologacao: Optional[datetime] = None
     situacao: Optional[SituacaoProcesso] = None
 
 
-# F7 listagem com filtros
 
 @router.get("", response_model=List[Documento])
 def listar_documentos(
@@ -63,55 +62,55 @@ def listar_documentos(
 
     if numero_processo is not None:
         documentos = [d for d in documentos if d.numero_processo == numero_processo]
- 
+
     if tipo_documento is not None:
         documentos = [d for d in documentos if d.tipo_documento == tipo_documento]
- 
+
     if modalidade is not None:
         documentos = [d for d in documentos if d.modalidade == modalidade]
- 
+
     if orgao_responsavel is not None:
         documentos = [d for d in documentos if d.orgao_responsavel == orgao_responsavel]
- 
+
     if situacao is not None:
         documentos = [d for d in documentos if d.situacao == situacao]
- 
+
     logger.info("LISTAGEM total=%s", len(documentos))
- 
+
     return documentos
 
-# F8 Estatísticas
+
 
 @router.get("/estatisticas")
 def estatisticas_documentos():
     documentos = ler_todos()
- 
+
     total_documentos = len(documentos)
     espaco_utilizado_bytes = sum(d.tamanho for d in documentos)
- 
+
     por_extensao: dict[str, int] = {}
     por_categoria: dict[str, int] = {}
     por_modalidade: dict[str, int] = {}
     por_situacao: dict[str, int] = {}
     valor_total_contratado = 0.0
- 
+
     for d in documentos:
         por_extensao[d.extensao] = por_extensao.get(d.extensao, 0) + 1
         por_categoria[d.categoria] = por_categoria.get(d.categoria, 0) + 1
- 
+
         if d.modalidade is not None:
             chave_modalidade = d.modalidade.value
             por_modalidade[chave_modalidade] = por_modalidade.get(chave_modalidade, 0) + 1
- 
+
         if d.situacao is not None:
             chave_situacao = d.situacao.value
             por_situacao[chave_situacao] = por_situacao.get(chave_situacao, 0) + 1
- 
+
         if d.valor_contratado is not None:
             valor_total_contratado += d.valor_contratado
- 
+
     logger.info("ESTATISTICAS total=%s", total_documentos)
- 
+
     return {
         "total_documentos": total_documentos,
         "espaco_utilizado_bytes": espaco_utilizado_bytes,
@@ -120,6 +119,47 @@ def estatisticas_documentos():
         "por_modalidade": por_modalidade,
         "por_situacao": por_situacao,
         "valor_total_contratado": round(valor_total_contratado, 2),
+    }
+
+
+
+@router.get("/integridade", tags=["Integridade"])
+def verificar_integridade_global():
+    documentos = ler_todos()
+
+    verificados = 0
+    integros = 0
+    alterados = 0
+    ausentes = []
+
+    for documento in documentos:
+        verificados += 1
+        caminho_arquivo = os.path.join(DOCUMENTOS_DIR, documento.nome_armazenado)
+
+        if not os.path.exists(caminho_arquivo):
+            ausentes.append(documento.id)
+            logger.warning("ARQUIVO_FISICO_AUSENTE id=%s", documento.id)
+            continue
+
+        with open(caminho_arquivo, "rb") as f:
+            hash_atual = hashlib.sha256(f.read()).hexdigest()
+
+        if hash_atual == documento.sha256:
+            integros += 1
+        else:
+            alterados += 1
+            logger.warning("INTEGRIDADE_FALHOU id=%s", documento.id)
+
+    logger.info(
+        "INTEGRIDADE_GLOBAL verificados=%s integros=%s alterados=%s ausentes=%s",
+        verificados, integros, alterados, len(ausentes),
+    )
+
+    return {
+        "verificados": verificados,
+        "integros": integros,
+        "alterados": alterados,
+        "arquivos_ausentes": ausentes,
     }
 
 
@@ -286,9 +326,6 @@ def atualizar_documento(documento_id: int, dados: DocumentoUpdate):
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     atualizacoes = dados.model_dump(exclude_unset=True)
-
-    if "descricao" in atualizacoes:
-        atualizacoes["descricao"] = atualizacoes.pop("descricao")
 
     documento_atualizado = documento.model_copy(update=atualizacoes)
 
