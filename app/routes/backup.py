@@ -66,3 +66,7 @@ def listar_backups():
                 "arquivo": nome_arquivo,
                 "tamanho": os.path.getsize(caminho),
             })
+
+    logger.info("LISTAGEM_BACKUPS total=%s", len(backups))
+
+    return backups
