@@ -30,7 +30,7 @@ class TipoDocumento(str, Enum):
     OUTRO = "outro"
 
 class Documento(BaseModel):
-    #-- Campos comuns a todos os temas
+    
     id: int
     nome_original: str
     nome_armazenado: str
@@ -42,7 +42,6 @@ class Documento(BaseModel):
     data_upload: datetime
     sha256: str
 
-    #-- Campos especificos: Licitações e compras
 
     numero_processo: str
     tipo_documento: TipoDocumento

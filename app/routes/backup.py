@@ -35,14 +35,14 @@ def _caminho_backup_ou_404(nome: str) -> str:
     return caminho
 
 
-# --------------------------------------------------------------------- F14
+
 @router.post("/backup", status_code=201)
 def criar_backup():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     nome_arquivo = f"backup_{timestamp}.{FORMATO}"
     caminho_backup = os.path.join(BACKUPS_DIR, nome_arquivo)
 
-    # Nunca sobrescreve um backup anterior: se o nome já existe, acrescenta um contador
+    
     contador = 1
     while os.path.exists(caminho_backup):
         contador += 1
@@ -52,14 +52,14 @@ def criar_backup():
     total_documentos = 0
     try:
         with zipfile.ZipFile(caminho_backup, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # documentos físicos
+            
             for nome_doc in sorted(os.listdir(DOCUMENTOS_DIR)):
                 caminho_doc = os.path.join(DOCUMENTOS_DIR, nome_doc)
                 if os.path.isfile(caminho_doc):
                     zipf.write(caminho_doc, arcname=f"documentos/{nome_doc}")
                     total_documentos += 1
 
-            # metadados
+            
             caminho_json = os.path.join(METADATA_DIR, "documentos.json")
             if os.path.exists(caminho_json):
                 zipf.write(caminho_json, arcname=ENTRADA_METADADOS)
@@ -78,7 +78,7 @@ def criar_backup():
     return {"arquivo": nome_arquivo, "documentos": total_documentos, "tamanho": tamanho}
 
 
-# --------------------------------------------------------------------- F15
+
 @router.get("/backups")
 def listar_backups():
     if not os.path.exists(BACKUPS_DIR):
@@ -97,7 +97,7 @@ def listar_backups():
     return backups
 
 
-# ------------------------------------------------------- download (F17)
+
 @router.get("/backups/{nome}")
 def baixar_backup(nome: str):
     caminho = _caminho_backup_ou_404(nome)
@@ -105,7 +105,7 @@ def baixar_backup(nome: str):
     return FileResponse(path=caminho, filename=nome, media_type="application/zip")
 
 
-# -------------------------------------------------- recuperação de backup
+
 @router.post("/backups/{nome}/restaurar")
 def restaurar_backup(nome: str):
     """Restaura os documentos físicos e o documentos.json a partir de um backup.
@@ -127,7 +127,7 @@ def restaurar_backup(nome: str):
                     status_code=422, detail=f"Backup sem {ENTRADA_METADADOS}."
                 )
 
-            # 1) valida os metadados ANTES de alterar qualquer coisa
+            
             try:
                 dados = json.loads(zipf.read(ENTRADA_METADADOS).decode("utf-8"))
                 if not isinstance(dados, list):
@@ -139,7 +139,7 @@ def restaurar_backup(nome: str):
                     status_code=422, detail=f"Metadados do backup inválidos: {erro}"
                 ) from erro
 
-            # 2) restaura os arquivos físicos (basename evita escrever fora da pasta)
+            
             restaurados = 0
             for item in nomes:
                 if item.startswith("documentos/") and not item.endswith("/"):
@@ -148,7 +148,7 @@ def restaurar_backup(nome: str):
                         f.write(zipf.read(item))
                     restaurados += 1
 
-            # 3) por último, os metadados: nunca apontam para arquivo que não foi restaurado
+            
             salvar_todos(documentos)
     except HTTPException:
         raise
