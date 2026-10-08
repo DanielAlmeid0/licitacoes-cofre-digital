@@ -20,9 +20,12 @@ class SituacaoProcesso(str, Enum):
 class TipoDocumento(str, Enum):
     EDITAL = "edital"
     PROPOSTA = "proposta"
+    COTACAO = "cotacao"
     CONTRATO = "contrato"
+    NOTA_FISCAL = "nota_fiscal"
     ATA = "ata"
-    TERMO_DE_REFERENCIA =  "termo_de_referencia"
+    DOCUMENTO_FORNECEDOR = "documento_fornecedor"
+    TERMO_DE_REFERENCIA = "termo_de_referencia"
     NOTA_DE_EMPENHO = "nota_de_empenho"
     OUTRO = "outro"
 
