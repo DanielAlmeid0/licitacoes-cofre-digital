@@ -16,8 +16,8 @@ Oferecer um "cofre" de documentos (editais, propostas, contratos, atas, cotaçõ
 
 ## Requisitos e bibliotecas
 
-- Python 3.11+ (_confirmar a versão usada_)
-- FastAPI, Uvicorn, Pydantic, PyYAML, python-multipart (_conferir com o requirements.txt_)
+- Python 3.11+
+- FastAPI, Uvicorn, Pydantic, PyYAML, python-multipart
 
 ## Instalação
 
