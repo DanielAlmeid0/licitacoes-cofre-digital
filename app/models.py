@@ -12,10 +12,10 @@ class Modalidade(str, Enum):
 
 class SituacaoProcesso(str, Enum):
     EM_ANDAMENTO = "em_andamento"
-    HOMOLOGADDA = "homologada"
+    HOMOLOGADA = "homologada"
     CANCELADA = "cancelada"
     DESERTA = "deserta"
-    FRACASADA = "fracassada"
+    FRACASSADA = "fracassada"
 
 class TipoDocumento(str, Enum):
     EDITAL = "edital"
@@ -35,7 +35,7 @@ class Documento(BaseModel):
     tipo_mime: str
     tamanho: int
     categoria: str
-    desccricao: Optional[str] = None
+    descricao: Optional[str] = None
     data_upload: datetime
     sha256: str
 
@@ -48,5 +48,5 @@ class Documento(BaseModel):
     valor_estimado: Optional[float] = Field(default =None, ge=0)
     valor_contratado: Optional[float] = Field(default=None, ge=0)
     data_abertura: Optional[datetime] = None
-    date_homologacao: Optional[datetime] = None
+    data_homologacao: Optional[datetime] = None
     situacao: Optional[SituacaoProcesso] = None
