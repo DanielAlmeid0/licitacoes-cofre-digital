@@ -13,6 +13,7 @@ def garantir_diretorios(config: dict) -> None:
         config["storage"]["diretorio_documentos"],
         config["storage"]["diretorio_backups"],
         config["storage"]["diretorio_metadata"],
+        config["storage"]["diretorio_exportacoes"],
 
         Path(config["logging"]["arquivo"]).parent,
     ]

@@ -43,6 +43,7 @@ class Documento(BaseModel):
 
     numero_processo: str
     tipo_documento: TipoDocumento
+    fornecedor: Optional[str] = None
     modalidade: Optional[Modalidade] = None
     orgao_responsavel: Optional[str] = None
     valor_estimado: Optional[float] = Field(default =None, ge=0)

@@ -18,14 +18,15 @@ COLUNAS_CSV = [
     "tamanho",
     "data_upload",
     "sha256",
-    "numero_processo",
+       "numero_processo",
     "tipo_documento",
+    "fornecedor",
     "modalidade",
     "orgao_responsavel",
     "valor_estimado",
     "valor_contratado",
     "data_abertura",
-    "date_homologacao",
+    "data_homologacao",
     "situacao",
 ]
 

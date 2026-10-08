@@ -30,6 +30,7 @@ class DocumentoUpdate(BaseModel):
     categoria: Optional[str] = None
     descricao: Optional[str] = None
     tipo_documento: Optional[TipoDocumento] = None
+    fornecedor: Optional[str] = None
     modalidade: Optional[Modalidade] = None
     orgao_responsavel: Optional[str] = None
     valor_estimado: Optional[float] = None
@@ -48,7 +49,9 @@ def listar_documentos(
     tipo_documento: Optional[TipoDocumento] = None,
     modalidade: Optional[Modalidade] = None,
     orgao_responsavel: Optional[str] = None,
+    fornecedor: Optional[str] = None,
     situacao: Optional[SituacaoProcesso] = None,
+    
 ):
 
     documentos = ler_todos()
@@ -71,6 +74,12 @@ def listar_documentos(
 
     if orgao_responsavel is not None:
         documentos = [d for d in documentos if d.orgao_responsavel == orgao_responsavel]
+
+    if fornecedor is not None:
+        documentos = [
+            d for d in documentos
+            if d.fornecedor and d.fornecedor.lower() == fornecedor.lower()
+        ]
 
     if situacao is not None:
         documentos = [d for d in documentos if d.situacao == situacao]
@@ -171,11 +180,12 @@ async def upload_documento(
     numero_processo: str = Form(...),
     tipo_documento: TipoDocumento = Form(...),
     modalidade: Optional[Modalidade] = Form(None),
+    fornecedor: Optional[str] = Form(None),
     orgao_responsavel: Optional[str] = Form(None),
     valor_estimado: Optional[float] = Form(None),
     valor_contratado: Optional[float] = Form(None),
     data_abertura: Optional[datetime] = Form(None),
-    date_homologacao: Optional[datetime] = Form(None),
+    data_homologacao: Optional[datetime] = Form(None),
     situacao: Optional[SituacaoProcesso] = Form(None),
 ):
     novo_id = proximo_id()
@@ -211,12 +221,13 @@ async def upload_documento(
         sha256=sha256,
         numero_processo=numero_processo,
         tipo_documento=tipo_documento,
+        fornecedor=fornecedor,
         modalidade=modalidade,
         orgao_responsavel=orgao_responsavel,
         valor_estimado=valor_estimado,
         valor_contratado=valor_contratado,
         data_abertura=data_abertura,
-        data_homologacao=date_homologacao,
+        data_homologacao=data_homologacao,
         situacao=situacao,
     )
 

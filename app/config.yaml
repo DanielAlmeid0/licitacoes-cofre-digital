@@ -2,6 +2,7 @@ storage:
   diretorio_documentos: "./storage/documentos"
   diretorio_backups: "./storage/backups"
   diretorio_metadata: "./storage/metadata"
+  diretorio_exportacoes: "./storage/exportacoes"
 
 upload:
   tamanho_maximo_mb: 20
