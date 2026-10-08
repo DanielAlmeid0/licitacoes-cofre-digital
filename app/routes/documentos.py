@@ -1,17 +1,20 @@
-import hashlib
+import json
 import mimetypes
 import os
+import re
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import config
 from app.core.logging_config import logger
 from app.models import Documento, Modalidade, SituacaoProcesso, TipoDocumento
+from app.services.hash_service import calcular_hash
 from app.services.json_repository import (
+    RepositorioError,
     adicionar,
     atualizar,
     buscar_por_id,
@@ -21,9 +24,25 @@ from app.services.json_repository import (
 )
 
 router = APIRouter(prefix="/documentos", tags=["Documentos"])
+# F10: a verificação global fica em GET /integridade (fora do prefixo /documentos)
+router_integridade = APIRouter(tags=["Integridade"])
 
 DOCUMENTOS_DIR = config["storage"]["diretorio_documentos"]
 os.makedirs(DOCUMENTOS_DIR, exist_ok=True)
+
+LIMITE_UPLOAD_BYTES = int(config["upload"]["tamanho_maximo_mb"] * 1024 * 1024)
+
+
+def _erro_422(erro: ValidationError) -> HTTPException:
+    detalhes = json.loads(erro.json(include_url=False, include_input=False, include_context=False))
+    return HTTPException(status_code=422, detail=detalhes)
+
+
+def _limpar_nome_arquivo(nome) -> str:
+    """Remove caminhos (../, C:\\) e caracteres perigosos; devolve só o nome do arquivo."""
+    nome = os.path.basename((nome or "").replace("\\", "/"))
+    nome = re.sub(r'[<>:"|?*\x00-\x1f]', "_", nome)
+    return nome.strip(" .")
 
 
 class DocumentoUpdate(BaseModel):
@@ -40,7 +59,6 @@ class DocumentoUpdate(BaseModel):
     situacao: Optional[SituacaoProcesso] = None
 
 
-
 @router.get("", response_model=List[Documento])
 def listar_documentos(
     categoria: Optional[str] = None,
@@ -51,7 +69,7 @@ def listar_documentos(
     orgao_responsavel: Optional[str] = None,
     fornecedor: Optional[str] = None,
     situacao: Optional[SituacaoProcesso] = None,
-    
+    nome_arquivo: Optional[str] = None,
 ):
 
     documentos = ler_todos()
@@ -84,10 +102,13 @@ def listar_documentos(
     if situacao is not None:
         documentos = [d for d in documentos if d.situacao == situacao]
 
+    if nome_arquivo is not None:
+        termo = nome_arquivo.lower()
+        documentos = [d for d in documentos if termo in d.nome_original.lower()]
+
     logger.info("LISTAGEM total=%s", len(documentos))
 
     return documentos
-
 
 
 @router.get("/estatisticas")
@@ -101,7 +122,7 @@ def estatisticas_documentos():
     por_categoria: dict[str, int] = {}
     por_modalidade: dict[str, int] = {}
     por_situacao: dict[str, int] = {}
-    valor_total_contratado = 0.0
+    valor_por_processo: dict[str, float] = {}
 
     for d in documentos:
         por_extensao[d.extensao] = por_extensao.get(d.extensao, 0) + 1
@@ -115,8 +136,9 @@ def estatisticas_documentos():
             chave_situacao = d.situacao.value
             por_situacao[chave_situacao] = por_situacao.get(chave_situacao, 0) + 1
 
-        if d.valor_contratado is not None:
-            valor_total_contratado += d.valor_contratado
+        # F8: o valor contratado é do processo, então conta uma vez por processo
+        if d.valor_contratado is not None and d.numero_processo not in valor_por_processo:
+            valor_por_processo[d.numero_processo] = d.valor_contratado
 
     logger.info("ESTATISTICAS total=%s", total_documentos)
 
@@ -127,12 +149,12 @@ def estatisticas_documentos():
         "por_categoria": por_categoria,
         "por_modalidade": por_modalidade,
         "por_situacao": por_situacao,
-        "valor_total_contratado": round(valor_total_contratado, 2),
+        "valor_total_contratado": round(sum(valor_por_processo.values()), 2),
+        "valor_contratado_por_processo": valor_por_processo,
     }
 
 
-
-@router.get("/integridade", tags=["Integridade"])
+@router_integridade.get("/integridade")
 def verificar_integridade_global():
     documentos = ler_todos()
 
@@ -147,11 +169,11 @@ def verificar_integridade_global():
 
         if not os.path.exists(caminho_arquivo):
             ausentes.append(documento.id)
-            logger.warning("ARQUIVO_FISICO_AUSENTE id=%s", documento.id)
+            logger.error("ARQUIVO_FISICO_AUSENTE id=%s", documento.id)
             continue
 
         with open(caminho_arquivo, "rb") as f:
-            hash_atual = hashlib.sha256(f.read()).hexdigest()
+            hash_atual = calcular_hash(f.read())
 
         if hash_atual == documento.sha256:
             integros += 1
@@ -188,16 +210,35 @@ async def upload_documento(
     data_homologacao: Optional[datetime] = Form(None),
     situacao: Optional[SituacaoProcesso] = Form(None),
 ):
-    novo_id = proximo_id()
+    nome_original = _limpar_nome_arquivo(arquivo.filename)
+    if not nome_original:
+        logger.warning("UPLOAD_RECUSADO motivo=nome_invalido")
+        raise HTTPException(status_code=400, detail="Nome de arquivo inválido.")
 
-    nome_original = arquivo.filename
+    # lê no máximo limite+1 bytes: basta para saber se passou do limite
+    conteudo = await arquivo.read(LIMITE_UPLOAD_BYTES + 1)
+
+    if len(conteudo) == 0:
+        logger.warning("UPLOAD_RECUSADO arquivo=%s motivo=arquivo_vazio", nome_original)
+        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+
+    if len(conteudo) > LIMITE_UPLOAD_BYTES:
+        logger.warning("UPLOAD_RECUSADO arquivo=%s motivo=acima_do_limite", nome_original)
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo acima do limite de {config['upload']['tamanho_maximo_mb']} MB.",
+        )
+
+    if not categoria.strip() or not numero_processo.strip():
+        logger.warning("UPLOAD_RECUSADO arquivo=%s motivo=metadados_vazios", nome_original)
+        raise HTTPException(
+            status_code=422, detail="categoria e numero_processo não podem ser vazios."
+        )
+
+    novo_id = proximo_id()
     extensao = os.path.splitext(nome_original)[1]
     nome_armazenado = f"{novo_id}_{nome_original}"
     caminho_arquivo = os.path.join(DOCUMENTOS_DIR, nome_armazenado)
-
-    conteudo = await arquivo.read()
-    with open(caminho_arquivo, "wb") as f:
-        f.write(conteudo)
 
     tipo_mime = (
         arquivo.content_type
@@ -205,40 +246,50 @@ async def upload_documento(
         or "application/octet-stream"
     )
 
-    tamanho = len(conteudo)
-    sha256 = hashlib.sha256(conteudo).hexdigest()
+    # valida TODOS os metadados antes de gravar o arquivo (não sobra arquivo órfão)
+    try:
+        documento = Documento(
+            id=novo_id,
+            nome_original=nome_original,
+            nome_armazenado=nome_armazenado,
+            extensao=extensao,
+            tipo_mime=tipo_mime,
+            tamanho=len(conteudo),
+            categoria=categoria.strip(),
+            descricao=descricao,
+            data_upload=datetime.now(),
+            sha256=calcular_hash(conteudo),
+            numero_processo=numero_processo.strip(),
+            tipo_documento=tipo_documento,
+            fornecedor=fornecedor,
+            modalidade=modalidade,
+            orgao_responsavel=orgao_responsavel,
+            valor_estimado=valor_estimado,
+            valor_contratado=valor_contratado,
+            data_abertura=data_abertura,
+            data_homologacao=data_homologacao,
+            situacao=situacao,
+        )
+    except ValidationError as erro:
+        logger.warning("UPLOAD_RECUSADO arquivo=%s motivo=metadados_invalidos", nome_original)
+        raise _erro_422(erro) from erro
 
-    documento = Documento(
-        id=novo_id,
-        nome_original=nome_original,
-        nome_armazenado=nome_armazenado,
-        extensao=extensao,
-        tipo_mime=tipo_mime,
-        tamanho=tamanho,
-        categoria=categoria,
-        descricao=descricao,
-        data_upload=datetime.now(),
-        sha256=sha256,
-        numero_processo=numero_processo,
-        tipo_documento=tipo_documento,
-        fornecedor=fornecedor,
-        modalidade=modalidade,
-        orgao_responsavel=orgao_responsavel,
-        valor_estimado=valor_estimado,
-        valor_contratado=valor_contratado,
-        data_abertura=data_abertura,
-        data_homologacao=data_homologacao,
-        situacao=situacao,
-    )
+    try:
+        with open(caminho_arquivo, "wb") as f:
+            f.write(conteudo)
+    except OSError as erro:
+        logger.error("ERRO_ESCRITA arquivo=%s detalhe=%s", nome_armazenado, erro)
+        raise HTTPException(status_code=500, detail="Erro ao gravar o arquivo.") from erro
 
     try:
         adicionar(documento)
-    except Exception:
-        os.remove(caminho_arquivo)
-        logger.error("ERRO_PERSISTENCIA id=%s arquivo=%s", novo_id, nome_original)
+    except (RepositorioError, OSError) as erro:
+        if os.path.exists(caminho_arquivo):
+            os.remove(caminho_arquivo)
+        logger.error("ERRO_PERSISTENCIA id=%s arquivo=%s detalhe=%s", novo_id, nome_original, erro)
         raise HTTPException(
             status_code=500, detail="Erro ao registrar metadados do documento."
-        )
+        ) from erro
 
     logger.info(
         "UPLOAD id=%s arquivo=%s categoria=%s processo=%s",
@@ -258,6 +309,8 @@ def consultar_documento(documento_id: int):
     if not documento:
         logger.warning("DOCUMENTO_NAO_ENCONTRADO id=%s", documento_id)
         raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    logger.info("CONSULTA id=%s arquivo=%s", documento.id, documento.nome_original)
 
     return documento
 
@@ -310,7 +363,7 @@ def verificar_integridade(documento_id: int):
         )
 
     with open(caminho_arquivo, "rb") as f:
-        hash_atual = hashlib.sha256(f.read()).hexdigest()
+        hash_atual = calcular_hash(f.read())
 
     integro = hash_atual == documento.sha256
 
@@ -338,7 +391,18 @@ def atualizar_documento(documento_id: int, dados: DocumentoUpdate):
 
     atualizacoes = dados.model_dump(exclude_unset=True)
 
-    documento_atualizado = documento.model_copy(update=atualizacoes)
+    if "categoria" in atualizacoes and not (atualizacoes["categoria"] or "").strip():
+        logger.warning("ATUALIZACAO_RECUSADA id=%s motivo=categoria_vazia", documento_id)
+        raise HTTPException(status_code=422, detail="categoria não pode ser vazia.")
+
+    # revalida o documento INTEIRO: null em campo obrigatório ou valor negativo dão 422
+    try:
+        documento_atualizado = Documento.model_validate(
+            {**documento.model_dump(), **atualizacoes}
+        )
+    except ValidationError as erro:
+        logger.warning("ATUALIZACAO_RECUSADA id=%s motivo=metadados_invalidos", documento_id)
+        raise _erro_422(erro) from erro
 
     atualizar(documento_atualizado)
 
@@ -364,7 +428,7 @@ def excluir_documento(documento_id: int):
     if os.path.exists(caminho_arquivo):
         os.remove(caminho_arquivo)
     else:
-        logger.warning(
+        logger.error(
             "ARQUIVO_FISICO_AUSENTE id=%s arquivo=%s", documento_id, documento.nome_armazenado
         )
 

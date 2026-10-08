@@ -12,21 +12,26 @@ from app.core.logging_config import logger
 from app.models import Documento
 from app.services.json_repository import ler_todos
 
-# F16 
 router = APIRouter(prefix="/processos", tags=["Processos"])
 
 DOCUMENTOS_DIR = config["storage"]["diretorio_documentos"]
 EXPORTACOES_DIR = config["storage"]["diretorio_exportacoes"]
 
-# Tipos de documento esperados em um processo completo (usado no checklist)
 DOCUMENTOS_OBRIGATORIOS = ["edital", "proposta", "contrato", "ata"]
+DOCUMENTOS_POR_MODALIDADE = {
+    "pregao_eletronico": ["edital", "proposta", "ata", "contrato"],
+    "concorrencia": ["edital", "proposta", "ata", "contrato"],
+    "tomada_de_precos": ["edital", "proposta", "ata", "contrato"],
+    "dispensa": ["cotacao", "contrato"],
+    "inexigibilidade": ["documento_fornecedor", "contrato"],
+}
 
 
 def _documentos_do_processo(numero_processo: str) -> list[Documento]:
     documentos = [d for d in ler_todos() if d.numero_processo == numero_processo]
 
     if not documentos:
-        logger.error("PROCESSO_NAO_ENCONTRADO numero=%s", numero_processo)
+        logger.warning("PROCESSO_NAO_ENCONTRADO numero=%s", numero_processo)
         raise HTTPException(
             status_code=404,
             detail="Processo não encontrado: nenhum documento cadastrado com esse número.",
@@ -36,7 +41,6 @@ def _documentos_do_processo(numero_processo: str) -> list[Documento]:
 
 
 def _primeiro_valor(documentos: list[Documento], campo: str):
-    """Primeiro valor preenchido de um campo entre os documentos do processo."""
     for doc in documentos:
         valor = getattr(doc, campo, None)
         if valor is not None:
@@ -46,7 +50,6 @@ def _primeiro_valor(documentos: list[Documento], campo: str):
 
 @router.get("")
 def listar_processos():
-    """Lista os processos cadastrados (útil para saber qual número consultar)."""
     por_processo: dict[str, list[Documento]] = {}
     for doc in ler_todos():
         por_processo.setdefault(doc.numero_processo, []).append(doc)
@@ -68,7 +71,6 @@ def listar_processos():
     return resposta
 
 
-# O path permite números de processo com barra, como 0001/2026
 @router.get("/{numero_processo:path}/documentos")
 def documentos_do_processo(numero_processo: str):
     numero_processo = numero_processo.strip()
@@ -103,7 +105,6 @@ def zip_do_processo(numero_processo: str):
             status_code=500, detail="Erro ao preparar o diretório de exportações."
         ) from erro
 
-    # Nome do ZIP: sem barras nem caracteres problemáticos, e sem sobrescrever outro
     numero_seguro = re.sub(r"[^A-Za-z0-9_-]+", "-", numero_processo).strip("-") or "processo"
     carimbo = datetime.now().strftime("%Y%m%d_%H%M%S")
     nome_zip = f"processo_{numero_seguro}_{carimbo}.zip"
@@ -132,7 +133,6 @@ def zip_do_processo(numero_processo: str):
                     )
                     continue
 
-                # nome_armazenado já inclui o id, então não há colisão de nomes
                 zipf.write(caminho_doc, arcname=f"documentos/{doc.nome_armazenado}")
                 incluidos.append(doc)
 
@@ -179,8 +179,6 @@ def zip_do_processo(numero_processo: str):
     )
 
 
-# Checklist: idea e implementação original do colega do trio, mantida como
-# endpoint extra. Só mudou a rota para aceitar números com barra (0001/2026).
 @router.get("/{numero_processo:path}/checklist")
 def checklist_processo(numero_processo: str):
     numero_processo = numero_processo.strip()
@@ -192,22 +190,25 @@ def checklist_processo(numero_processo: str):
         if d.tipo_documento is not None
     }
 
-    tipos_faltantes = [
-        tipo for tipo in DOCUMENTOS_OBRIGATORIOS if tipo not in tipos_encontrados
-    ]
+    modalidade = _primeiro_valor(documentos_do_processo, "modalidade")
+    esperados = DOCUMENTOS_POR_MODALIDADE.get(modalidade, DOCUMENTOS_OBRIGATORIOS)
+
+    tipos_faltantes = [tipo for tipo in esperados if tipo not in tipos_encontrados]
 
     completo = len(tipos_faltantes) == 0
 
     logger.info(
-        "CONSULTA_CHECKLIST processo=%s completo=%s faltantes=%s",
+        "CONSULTA_CHECKLIST processo=%s modalidade=%s completo=%s faltantes=%s",
         numero_processo,
+        modalidade,
         completo,
         ",".join(tipos_faltantes) if tipos_faltantes else "nenhum",
     )
 
     return {
         "numero_processo": numero_processo,
-        "documentos_esperados": DOCUMENTOS_OBRIGATORIOS,
+        "modalidade": modalidade,
+        "documentos_esperados": esperados,
         "documentos_encontrados": sorted(tipos_encontrados),
         "documentos_faltantes": tipos_faltantes,
         "completo": completo,
